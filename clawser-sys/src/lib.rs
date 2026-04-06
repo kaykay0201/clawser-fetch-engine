@@ -52,6 +52,11 @@ unsafe extern "C" {
     pub fn clawser_request_set_body(req: *mut ClawserRequest, data: *const u8, len: usize);
     pub fn clawser_request_set_max_redirects(req: *mut ClawserRequest, max_redirects: i32);
     pub fn clawser_request_set_timeout_ms(req: *mut ClawserRequest, timeout_ms: u32);
+    pub fn clawser_request_preview_headers(req: *mut ClawserRequest) -> usize;
+    pub fn clawser_request_preview_header_name_at(
+        req: *mut ClawserRequest, index: usize) -> *const c_char;
+    pub fn clawser_request_preview_header_value_at(
+        req: *mut ClawserRequest, index: usize) -> *const c_char;
     pub fn clawser_request_send(req: *mut ClawserRequest) -> *mut ClawserResponse;
     pub fn clawser_request_destroy(req: *mut ClawserRequest);
 

@@ -211,6 +211,26 @@ impl RequestBuilder {
         self
     }
 
+    /// Preview the final request headers (merged with session defaults, in
+    /// Chrome's canonical wire order) WITHOUT sending. Safe to call before `send()`.
+    pub fn preview_headers(&self) -> Vec<(String, String)> {
+        let count = unsafe { ffi::clawser_request_preview_headers(self.ptr) };
+        let mut result = Vec::with_capacity(count);
+        for i in 0..count {
+            unsafe {
+                let name = ffi::clawser_request_preview_header_name_at(self.ptr, i);
+                let value = ffi::clawser_request_preview_header_value_at(self.ptr, i);
+                if !name.is_null() && !value.is_null() {
+                    result.push((
+                        CStr::from_ptr(name).to_string_lossy().into_owned(),
+                        CStr::from_ptr(value).to_string_lossy().into_owned(),
+                    ));
+                }
+            }
+        }
+        result
+    }
+
     /// Send the request (blocking). Consumes the builder.
     pub fn send(mut self) -> Result<Response> {
         let req_ptr = self.ptr;
@@ -261,6 +281,11 @@ impl RandomRequestBuilder {
     pub fn timeout_ms(mut self, ms: u32) -> Self {
         self.inner = self.inner.timeout_ms(ms);
         self
+    }
+
+    /// Preview the final request headers before sending.
+    pub fn preview_headers(&self) -> Vec<(String, String)> {
+        self.inner.preview_headers()
     }
 
     /// Send the request and return both the seed and response.
