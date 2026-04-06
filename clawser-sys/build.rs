@@ -3,7 +3,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-const VERSION: &str = "0.1.4";
+const VERSION: &str = "0.1.9";
 const GITHUB_REPO: &str = "kaykay0201/clawser-fetch-engine";
 
 fn main() {
