@@ -1,6 +1,6 @@
 [package]
 name = "clawser-fetch"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "Antidetect HTTP client powered by Chromium's network stack — Chrome-identical TLS/JA3 and HTTP/2 fingerprints"
 license = "MIT OR Apache-2.0"
@@ -10,5 +10,5 @@ keywords = ["http", "antidetect", "tls-fingerprint", "chromium", "ja3"]
 categories = ["web-programming::http-client"]
 
 [dependencies]
-clawser-sys = { version = "0.1.3", path = "../clawser-sys" }
+clawser-sys = { version = "0.1.4", path = "../clawser-sys" }
 thiserror = "2"
