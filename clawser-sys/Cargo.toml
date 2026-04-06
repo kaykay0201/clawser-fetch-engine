@@ -1,0 +1,13 @@
+[package]
+name = "clawser-sys"
+version = "0.1.0"
+edition = "2021"
+description = "Raw FFI bindings to the clawser-fetch native library (Chromium net stack with antidetect)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kaykay0201/clawser-fetch-engine"
+readme = "../README.md"
+keywords = ["ffi", "chromium", "antidetect", "tls-fingerprint"]
+categories = ["external-ffi-bindings"]
+links = "clawser_fetch"
+build = "build.rs"
+exclude = ["native/*"]

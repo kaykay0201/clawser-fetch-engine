@@ -1,0 +1,3 @@
+[workspace]
+members = ["clawser-sys", "clawser-fetch"]
+resolver = "2"

@@ -1,0 +1,14 @@
+[package]
+name = "clawser-fetch"
+version = "0.1.0"
+edition = "2021"
+description = "Antidetect HTTP client powered by Chromium's network stack — Chrome-identical TLS/JA3 and HTTP/2 fingerprints"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kaykay0201/clawser-fetch-engine"
+readme = "../README.md"
+keywords = ["http", "antidetect", "tls-fingerprint", "chromium", "ja3"]
+categories = ["web-programming::http-client"]
+
+[dependencies]
+clawser-sys = { version = "0.1.0", path = "../clawser-sys" }
+thiserror = "2"
