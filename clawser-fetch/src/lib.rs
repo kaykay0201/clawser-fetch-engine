@@ -231,6 +231,56 @@ impl Drop for RequestBuilder {
     }
 }
 
+/// A request builder that also carries the seed from `request_random()`.
+pub struct RandomRequestBuilder {
+    seed: Seed,
+    inner: RequestBuilder,
+}
+
+impl RandomRequestBuilder {
+    pub fn header(mut self, name: &str, value: &str) -> Self {
+        self.inner = self.inner.header(name, value);
+        self
+    }
+
+    pub fn body(mut self, data: &[u8]) -> Self {
+        self.inner = self.inner.body(data);
+        self
+    }
+
+    pub fn json(mut self, body: &str) -> Self {
+        self.inner = self.inner.json(body);
+        self
+    }
+
+    pub fn max_redirects(mut self, n: i32) -> Self {
+        self.inner = self.inner.max_redirects(n);
+        self
+    }
+
+    pub fn timeout_ms(mut self, ms: u32) -> Self {
+        self.inner = self.inner.timeout_ms(ms);
+        self
+    }
+
+    /// Send the request and return both the seed and response.
+    pub fn send_with_seed(self) -> Result<(Seed, Response)> {
+        let resp = self.inner.send()?;
+        Ok((self.seed, resp))
+    }
+
+    /// Send the request, discarding the seed. Use `send_with_seed()` if you
+    /// need to reuse the identity later.
+    pub fn send(self) -> Result<Response> {
+        self.inner.send()
+    }
+
+    /// Get the seed without sending.
+    pub fn seed(&self) -> Seed {
+        self.seed
+    }
+}
+
 /// An HTTP response.
 pub struct Response {
     ptr: *mut ffi::ClawserResponse,
@@ -324,18 +374,59 @@ impl FetchEngine {
         }
     }
 
-    /// Fetch with a new random identity. Creates a session, stores it,
-    /// returns the seed (for reuse) and the response.
-    pub fn fetch_random(&self, method: &str, url: &str) -> Result<(Seed, Response)> {
+    /// Create a random identity session and store it. Returns the seed.
+    /// Use with `request()` to build requests with headers, body, etc.
+    ///
+    /// ```rust,no_run
+    /// # use clawser_fetch::FetchEngine;
+    /// let engine = FetchEngine::new();
+    /// let seed = engine.create_random()?;
+    /// let resp = engine.request(&seed, "GET", "https://example.com")?
+    ///     .header("Referer", "https://google.com")
+    ///     .timeout_ms(5000)
+    ///     .send()?;
+    /// # Ok::<(), clawser_fetch::ClawserError>(())
+    /// ```
+    pub fn create_random(&self) -> Result<Seed> {
         let (session, seed) = Session::random()?;
-        let resp = session.request(method, url)?.send()?;
-
-        // Store session for future reuse.
         let mut sessions = self.sessions.write().map_err(|_| {
             ClawserError::InitFailed("session lock poisoned".into())
         })?;
         sessions.insert(seed, session);
+        Ok(seed)
+    }
 
+    /// Create a random identity, build a request, and return both the seed
+    /// and a `RequestBuilder` for adding headers, body, etc. before sending.
+    ///
+    /// ```rust,no_run
+    /// # use clawser_fetch::FetchEngine;
+    /// let engine = FetchEngine::new();
+    /// let (seed, resp) = engine.request_random("POST", "https://example.com/api")?
+    ///     .header("X-Custom", "value")
+    ///     .json(r#"{"key": "value"}"#)
+    ///     .send_with_seed()?;
+    /// # Ok::<(), clawser_fetch::ClawserError>(())
+    /// ```
+    pub fn request_random(&self, method: &str, url: &str) -> Result<RandomRequestBuilder> {
+        let (session, seed) = Session::random()?;
+        let builder = session.request(method, url)?;
+        let mut sessions = self.sessions.write().map_err(|_| {
+            ClawserError::InitFailed("session lock poisoned".into())
+        })?;
+        sessions.insert(seed, session);
+        Ok(RandomRequestBuilder { seed, inner: builder })
+    }
+
+    /// Fetch with a new random identity (simple, no headers).
+    /// For full control, use `request_random()` instead.
+    pub fn fetch_random(&self, method: &str, url: &str) -> Result<(Seed, Response)> {
+        let (session, seed) = Session::random()?;
+        let resp = session.request(method, url)?.send()?;
+        let mut sessions = self.sessions.write().map_err(|_| {
+            ClawserError::InitFailed("session lock poisoned".into())
+        })?;
+        sessions.insert(seed, session);
         Ok((seed, resp))
     }
 
@@ -343,27 +434,7 @@ impl FetchEngine {
     /// creates one from the seed (fresh cookies). If it exists, reuses it
     /// (with accumulated cookies).
     pub fn fetch(&self, seed: &Seed, method: &str, url: &str) -> Result<Response> {
-        // Fast path: read lock — session already exists.
-        {
-            let sessions = self.sessions.read().map_err(|_| {
-                ClawserError::InitFailed("session lock poisoned".into())
-            })?;
-            if let Some(session) = sessions.get(seed) {
-                return session.request(method, url)?.send();
-            }
-        }
-
-        // Slow path: write lock — create session from seed.
-        let mut sessions = self.sessions.write().map_err(|_| {
-            ClawserError::InitFailed("session lock poisoned".into())
-        })?;
-        // Double-check (another thread may have created it).
-        if !sessions.contains_key(seed) {
-            let session = Session::from_seed(seed)?;
-            sessions.insert(*seed, session);
-        }
-        let session = sessions.get(seed).unwrap();
-        session.request(method, url)?.send()
+        self.request(seed, method, url)?.send()
     }
 
     /// Fetch with a request builder for full control (headers, body, etc.).

@@ -1,6 +1,6 @@
 [package]
 name = "clawser-fetch"
-version = "0.1.9"
+version = "0.2.0"
 edition = "2021"
 description = "Antidetect HTTP client powered by Chromium's network stack — Chrome-identical TLS/JA3 and HTTP/2 fingerprints"
 license = "MIT OR Apache-2.0"
