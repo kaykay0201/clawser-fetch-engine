@@ -74,12 +74,15 @@ fn download(lib_dir: &PathBuf, target: &str) {
     download_file(&dll_url, &lib_dir.join(dll_name));
 
     // Download import lib (Windows only).
+    // GN produces clawser_fetch.dll.lib but MSVC linker expects clawser_fetch.lib.
     if let Some(lib) = lib_name {
         let lib_url = format!(
             "https://github.com/{}/releases/download/v{}/{}-{}",
             GITHUB_REPO, VERSION, platform, lib
         );
         download_file(&lib_url, &lib_dir.join(lib));
+        // Rename .dll.lib → .lib so MSVC can find it.
+        let _ = fs::copy(lib_dir.join(lib), lib_dir.join("clawser_fetch.lib"));
     }
 }
 
@@ -101,6 +104,15 @@ fn download_file(url: &str, dest: &PathBuf) {
 }
 
 fn link(lib_dir: &PathBuf, target: &str) {
+    // Ensure .lib exists (GN names it .dll.lib, MSVC expects .lib).
+    if target.contains("windows") {
+        let dll_lib = lib_dir.join("clawser_fetch.dll.lib");
+        let lib = lib_dir.join("clawser_fetch.lib");
+        if dll_lib.exists() && !lib.exists() {
+            let _ = fs::copy(&dll_lib, &lib);
+        }
+    }
+
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=clawser_fetch");
 
