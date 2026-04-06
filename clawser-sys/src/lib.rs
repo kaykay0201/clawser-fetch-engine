@@ -35,6 +35,7 @@ unsafe extern "C" {
     pub fn clawser_session_create_random(out_seed: *mut ClawserSeed) -> *mut ClawserSession;
     pub fn clawser_session_from_seed(seed: *const ClawserSeed) -> *mut ClawserSession;
     pub fn clawser_session_create(config_json_path: *const c_char) -> *mut ClawserSession;
+    pub fn clawser_session_get_cookies(session: *mut ClawserSession) -> *const c_char;
     pub fn clawser_session_destroy(session: *mut ClawserSession);
     pub fn clawser_last_error() -> *const c_char;
 

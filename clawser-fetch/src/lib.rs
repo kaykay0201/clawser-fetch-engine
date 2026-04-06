@@ -5,8 +5,10 @@ pub use error::{ClawserError, Result};
 use clawser_sys as ffi;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
+use std::hash::Hash;
 use std::path::Path;
 use std::ptr;
+use std::sync::RwLock;
 
 /// Deterministic seed for fingerprint identity.
 /// Same seed = same fingerprint every time.
@@ -17,7 +19,7 @@ use std::ptr;
 /// - `webgl_seed`: Deterministic WebGL readPixels noise
 /// - `audio_seed`: Deterministic AudioContext noise
 /// - `client_rects_seed`: Deterministic getBoundingClientRect noise
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Seed {
     pub hw_seed: u64,
     pub canvas_seed: u64,
@@ -127,6 +129,15 @@ impl Session {
             return Err(ClawserError::InitFailed(last_error()));
         }
         Ok(Session { ptr })
+    }
+
+    /// Get all cookies in the session as a JSON array string.
+    pub fn cookies(&self) -> String {
+        let ptr = unsafe { ffi::clawser_session_get_cookies(self.ptr) };
+        if ptr.is_null() {
+            return "[]".to_string();
+        }
+        unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned()
     }
 
     pub fn get(&self, url: &str) -> Result<RequestBuilder> {
@@ -281,6 +292,139 @@ impl Drop for Response {
         if !self.ptr.is_null() {
             unsafe { ffi::clawser_response_destroy(self.ptr) };
         }
+    }
+}
+
+/// Thread-safe multi-identity fetch engine.
+///
+/// Manages multiple sessions (each with unique fingerprint + cookie jar).
+/// Create once at app startup, share across threads via `Arc<FetchEngine>`.
+///
+/// ```rust,no_run
+/// use std::sync::Arc;
+/// use clawser_fetch::FetchEngine;
+///
+/// let engine = Arc::new(FetchEngine::new());
+///
+/// // New random identity — engine stores session internally
+/// let (seed, resp) = engine.fetch_random("GET", "https://example.com")?;
+///
+/// // Reuse same identity — cookies persist
+/// let resp = engine.fetch(&seed, "GET", "https://example.com/page2")?;
+/// ```
+pub struct FetchEngine {
+    sessions: RwLock<HashMap<Seed, Session>>,
+}
+
+impl FetchEngine {
+    /// Create a new engine. No sessions yet — they're created on demand.
+    pub fn new() -> Self {
+        FetchEngine {
+            sessions: RwLock::new(HashMap::new()),
+        }
+    }
+
+    /// Fetch with a new random identity. Creates a session, stores it,
+    /// returns the seed (for reuse) and the response.
+    pub fn fetch_random(&self, method: &str, url: &str) -> Result<(Seed, Response)> {
+        let (session, seed) = Session::random()?;
+        let resp = session.request(method, url)?.send()?;
+
+        // Store session for future reuse.
+        let mut sessions = self.sessions.write().map_err(|_| {
+            ClawserError::InitFailed("session lock poisoned".into())
+        })?;
+        sessions.insert(seed, session);
+
+        Ok((seed, resp))
+    }
+
+    /// Fetch using an existing seed. If the session doesn't exist yet,
+    /// creates one from the seed (fresh cookies). If it exists, reuses it
+    /// (with accumulated cookies).
+    pub fn fetch(&self, seed: &Seed, method: &str, url: &str) -> Result<Response> {
+        // Fast path: read lock — session already exists.
+        {
+            let sessions = self.sessions.read().map_err(|_| {
+                ClawserError::InitFailed("session lock poisoned".into())
+            })?;
+            if let Some(session) = sessions.get(seed) {
+                return session.request(method, url)?.send();
+            }
+        }
+
+        // Slow path: write lock — create session from seed.
+        let mut sessions = self.sessions.write().map_err(|_| {
+            ClawserError::InitFailed("session lock poisoned".into())
+        })?;
+        // Double-check (another thread may have created it).
+        if !sessions.contains_key(seed) {
+            let session = Session::from_seed(seed)?;
+            sessions.insert(*seed, session);
+        }
+        let session = sessions.get(seed).unwrap();
+        session.request(method, url)?.send()
+    }
+
+    /// Fetch with a request builder for full control (headers, body, etc.).
+    pub fn request(&self, seed: &Seed, method: &str, url: &str) -> Result<RequestBuilder> {
+        // Ensure session exists.
+        {
+            let sessions = self.sessions.read().map_err(|_| {
+                ClawserError::InitFailed("session lock poisoned".into())
+            })?;
+            if let Some(session) = sessions.get(seed) {
+                return session.request(method, url);
+            }
+        }
+
+        let mut sessions = self.sessions.write().map_err(|_| {
+            ClawserError::InitFailed("session lock poisoned".into())
+        })?;
+        if !sessions.contains_key(seed) {
+            let session = Session::from_seed(seed)?;
+            sessions.insert(*seed, session);
+        }
+        let session = sessions.get(seed).unwrap();
+        session.request(method, url)
+    }
+
+    /// Get cookies for a specific identity.
+    pub fn cookies(&self, seed: &Seed) -> Result<String> {
+        let sessions = self.sessions.read().map_err(|_| {
+            ClawserError::InitFailed("session lock poisoned".into())
+        })?;
+        match sessions.get(seed) {
+            Some(session) => Ok(session.cookies()),
+            None => Ok("[]".to_string()),
+        }
+    }
+
+    /// Get all active seeds.
+    pub fn seeds(&self) -> Result<Vec<Seed>> {
+        let sessions = self.sessions.read().map_err(|_| {
+            ClawserError::InitFailed("session lock poisoned".into())
+        })?;
+        Ok(sessions.keys().copied().collect())
+    }
+
+    /// Drop a specific identity and its cookies.
+    pub fn drop_session(&self, seed: &Seed) -> Result<bool> {
+        let mut sessions = self.sessions.write().map_err(|_| {
+            ClawserError::InitFailed("session lock poisoned".into())
+        })?;
+        Ok(sessions.remove(seed).is_some())
+    }
+
+    /// Number of active sessions.
+    pub fn session_count(&self) -> usize {
+        self.sessions.read().map(|s| s.len()).unwrap_or(0)
+    }
+}
+
+impl Default for FetchEngine {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
