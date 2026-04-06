@@ -33,10 +33,19 @@ let resp = engine.fetch(&seed, "GET", "https://example.com")?;
 ## Custom Headers & POST
 
 ```rust
-// Full control via request builder
-let resp = engine.request(&seed, "POST", "https://api.example.com/data")?
+// Random identity WITH custom headers (new in 0.2.0)
+let (seed, resp) = engine.request_random("POST", "https://api.example.com/data")?
     .header("Authorization", "Bearer my-token")
     .header("X-Custom", "value")
+    .json(r#"{"key": "value"}"#)
+    .timeout_ms(5000)
+    .send_with_seed()?;
+
+println!("Seed: {} Status: {}", seed.to_hex(), resp.status());
+
+// Full control via request builder (existing seed)
+let resp = engine.request(&seed, "POST", "https://api.example.com/data")?
+    .header("Authorization", "Bearer my-token")
     .json(r#"{"key": "value"}"#)
     .timeout_ms(5000)
     .send()?;
@@ -47,6 +56,12 @@ println!("{}", resp.text()?);
 let resp = engine.request(&seed, "GET", "https://example.com")?
     .header("Accept-Language", "fr-FR,fr;q=0.9")
     .header("sec-ch-ua-platform", "\"Linux\"")
+    .send()?;
+
+// Two-step: create identity first, request later
+let seed = engine.create_random()?;
+let resp = engine.request(&seed, "GET", "https://example.com")?
+    .header("Referer", "https://google.com")
     .send()?;
 ```
 
