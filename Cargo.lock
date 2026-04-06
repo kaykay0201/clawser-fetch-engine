@@ -110,7 +110,7 @@ dependencies = [
 
 [[package]]
 name = "clawser-fetch"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clawser-sys",
  "thiserror",
@@ -118,7 +118,7 @@ dependencies = [
 
 [[package]]
 name = "clawser-sys"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ureq",
  "zip",
